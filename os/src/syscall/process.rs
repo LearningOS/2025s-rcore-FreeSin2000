@@ -1,6 +1,7 @@
 //! Process management syscalls
-use crate::task::{change_program_brk, exit_current_and_run_next, suspend_current_and_run_next};
-
+use crate::task::{change_program_brk, exit_current_and_run_next, suspend_current_and_run_next, copy_from_user, copy_to_user, current_syscall_cnt};
+use crate::mm::VirtAddr;
+use crate::timer::get_time_us;
 #[repr(C)]
 #[derive(Debug)]
 pub struct TimeVal {
@@ -25,16 +26,58 @@ pub fn sys_yield() -> isize {
 /// YOUR JOB: get time with second and microsecond
 /// HINT: You might reimplement it with virtual memory management.
 /// HINT: What if [`TimeVal`] is splitted by two pages ?
-pub fn sys_get_time(_ts: *mut TimeVal, _tz: usize) -> isize {
+pub fn sys_get_time(ts: *mut TimeVal, _tz: usize) -> isize {
     trace!("kernel: sys_get_time");
-    -1
+    let us = get_time_us();
+    /*
+    unsafe {
+        *ts = TimeVal {
+            sec: us / 1_000_000,
+            usec: us % 1_000_000,
+        };
+    }
+    */
+    let res =  TimeVal {
+            sec: us / 1_000_000,
+            usec: us % 1_000_000,
+        };
+    let ptr = &res as *const TimeVal as *const u8;
+    let len = core::mem::size_of::<TimeVal>();
+    let buf = unsafe{core::slice::from_raw_parts(ptr, len)};
+    let va: VirtAddr = (ts as usize).into();
+    copy_to_user(va, len, buf);
+    0
 }
 
 /// TODO: Finish sys_trace to pass testcases
 /// HINT: You might reimplement it with virtual memory management.
-pub fn sys_trace(_trace_request: usize, _id: usize, _data: usize) -> isize {
+pub fn sys_trace(trace_request: usize, id: usize, data: usize) -> isize {
+
     trace!("kernel: sys_trace");
-    -1
+    match trace_request {
+        0 => {
+            let mut res: u8 = 0;
+            let len = core::mem::size_of::<u8>();
+            let ptr = &mut res as * mut u8;
+            let buf = unsafe{core::slice::from_raw_parts_mut(ptr, len)};
+            if copy_from_user(id.into(), len, buf) >= 0 {res as isize} else {-1}
+            //unsafe{ *(id as *const u8) as isize}
+        },
+        1 => {
+            let len = core::mem::size_of::<u8>();
+            let ptr = &data as *const usize as * const u8;
+            let buf = unsafe{core::slice::from_raw_parts(ptr, len)};
+            //unsafe{ *(id as *mut u8) = (data & 0xff) as u8};
+            if copy_to_user(id.into(), len, buf) >= 0 {0} else {-1}
+
+        },
+        2 => {
+            current_syscall_cnt(id) as isize
+        },
+        _ => {
+            -1
+        },
+    }
 }
 
 // YOUR JOB: Implement mmap.

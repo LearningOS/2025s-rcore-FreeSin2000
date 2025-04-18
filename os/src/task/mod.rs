@@ -17,6 +17,7 @@ mod task;
 use crate::loader::{get_app_data, get_num_app};
 use crate::sync::UPSafeCell;
 use crate::trap::TrapContext;
+use crate::mm::*;
 use alloc::vec::Vec;
 use lazy_static::*;
 use switch::__switch;
@@ -133,6 +134,32 @@ impl TaskManager {
         inner.tasks[cur].change_program_brk(size)
     }
 
+    /// Get the current 'Running' task's syscall count.
+    fn get_current_syscall_cnt(&self, id: usize) -> usize {
+        let inner = self.inner.exclusive_access();
+		inner.tasks[inner.current_task].get_syscall_cnt(id)
+    }
+
+
+    /// Update the current 'Running' task's syscall count.
+    fn upd_syscall_cnt(& self, id: usize) {
+        let mut inner = self.inner.exclusive_access();
+        let cur = inner.current_task;
+		inner.tasks[cur].upd_syscall_cnt(id)
+    }
+
+    /// copy from user space to kernel space
+    pub fn copy_from_user(&self, va: VirtAddr, len: usize, buf: &mut [u8]) -> isize {
+        let inner = self.inner.exclusive_access();
+		inner.tasks[inner.current_task].copy_from_user(va, len, buf)
+    }
+
+    /// copy from kernel space to user space
+    pub fn copy_to_user(&self, va: VirtAddr, len: usize, buf: &[u8]) -> isize {
+        let inner = self.inner.exclusive_access();
+		inner.tasks[inner.current_task].copy_to_user(va, len, buf)
+    }
+
     /// Switch current `Running` task to the task we have found,
     /// or there is no `Ready` task and we can exit with all applications completed
     fn run_next_task(&self) {
@@ -202,3 +229,26 @@ pub fn current_trap_cx() -> &'static mut TrapContext {
 pub fn change_program_brk(size: i32) -> Option<usize> {
     TASK_MANAGER.change_current_program_brk(size)
 }
+
+/// Get the current 'Running' task's syscall count.
+pub fn current_syscall_cnt(id: usize) -> usize {	
+    TASK_MANAGER.get_current_syscall_cnt(id)
+}
+
+/// Update the current 'Running' task's syscall count.
+pub fn upd_syscall_cnt(id: usize) {	
+    TASK_MANAGER.upd_syscall_cnt(id)
+}
+
+/// Copy from the current 'Running' task's address space.
+pub fn copy_from_user(va: VirtAddr, len: usize, buf: &mut [u8]) -> isize {
+    TASK_MANAGER.copy_from_user(va, len, buf)
+}
+/// Copy to the current 'Running' task's address space.
+pub fn copy_to_user(va: VirtAddr, len: usize, buf: &[u8]) -> isize {
+    TASK_MANAGER.copy_to_user(va, len, buf)
+}
+
+
+
+

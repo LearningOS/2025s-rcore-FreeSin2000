@@ -14,6 +14,7 @@ use alloc::vec::Vec;
 use core::arch::asm;
 use lazy_static::*;
 use riscv::register::satp;
+use crate::mm::translated_byte_buffer;
 
 extern "C" {
     fn stext();
@@ -232,6 +233,67 @@ impl MemorySet {
     /// Translate a virtual page number to a page table entry
     pub fn translate(&self, vpn: VirtPageNum) -> Option<PageTableEntry> {
         self.page_table.translate(vpn)
+    }
+
+    /// Check the flags
+    pub fn check_flags(&self, va: VirtAddr, len: usize, flags: PTEFlags) -> bool {
+        
+		let start_va: VirtAddr = va;
+		let end_va: VirtAddr = (start_va.0 + len).into();
+
+		let start_vpn: VirtPageNum = start_va.floor();
+		let end_vpn: VirtPageNum = end_va.ceil();
+
+		let vpn_range = VPNRange::new(start_vpn, end_vpn);		
+        for vpn in vpn_range.into_iter() {
+            if let Some(pte) = self.translate(vpn) {
+                if (pte.flags() & flags) != flags {
+                    return false;
+                }
+            } else {
+                return false;
+            }
+        }
+        true
+    }
+    /// Copy from user address space to kernel space
+    pub fn copy_from_user(&self, va: VirtAddr, len: usize, buf: &mut [u8]) -> isize{
+        if buf.len() < len {
+            return -1;
+            //panic!("copy_from_user: len exceed.");
+        }
+        if !self.check_flags(va, len, PTEFlags::U | PTEFlags::R) {
+            return -1;
+            //panic!("copy_from_user: permission invailid.");
+        }
+        let tr_buf = translated_byte_buffer(self.token(), va.0 as *const u8, len);
+        let mut cur = 0;
+        for src in tr_buf {
+            let end = cur + src.len();
+            buf[cur..end].copy_from_slice(src);
+            cur = end;
+        }
+        len as isize
+    }
+
+    /// Copy from kernel address space to user space
+    pub fn copy_to_user(&self, va: VirtAddr, len: usize, buf: &[u8]) -> isize {
+        if buf.len() > len {
+            return -1;
+            //panic!("copy_to_user: len exceed.");
+        }
+        if !self.check_flags(va, len, PTEFlags::U | PTEFlags::W) {
+            return -1;
+            //panic!("copy_from_user: permission invailid.");
+        }
+        let tr_buf = translated_byte_buffer(self.token(), va.0 as *const u8, len);
+        let mut cur = 0;
+        for dst in tr_buf {
+            let end = cur + dst.len();
+            dst.copy_from_slice(&buf[cur..end]);
+            cur = end;
+        }
+        len as isize
     }
     /// shrink the area to new_end
     #[allow(unused)]

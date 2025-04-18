@@ -1,4 +1,5 @@
 //! Types related to task management
+use crate::syscall::{MAX_SYSCALL_NUM};
 use super::TaskContext;
 use crate::config::TRAP_CONTEXT_BASE;
 use crate::mm::{
@@ -28,9 +29,32 @@ pub struct TaskControlBlock {
 
     /// Program break
     pub program_brk: usize,
+
+	/// Syscall count
+	pub syscall_cnt: [usize; MAX_SYSCALL_NUM],
 }
 
 impl TaskControlBlock {
+    /// get the syscall count
+    pub fn get_syscall_cnt(&self, id: usize) -> usize {
+            self.syscall_cnt[id]
+    }
+
+    /// upd the syscall count
+
+    pub fn upd_syscall_cnt(&mut self, id: usize) {
+        self.syscall_cnt[id] = self.syscall_cnt[id] + 1;
+    }
+
+    /// copy from user space to kernel space
+    pub fn copy_from_user(&self, va: VirtAddr, len: usize, buf: &mut [u8]) -> isize{
+        self.memory_set.copy_from_user(va, len, buf)
+    }
+
+    /// copy from kernel space to user space
+    pub fn copy_to_user(&self, va: VirtAddr, len: usize, buf: &[u8]) -> isize{
+        self.memory_set.copy_to_user(va, len, buf)
+    }
     /// get the trap context
     pub fn get_trap_cx(&self) -> &'static mut TrapContext {
         self.trap_cx_ppn.get_mut()
@@ -39,6 +63,7 @@ impl TaskControlBlock {
     pub fn get_user_token(&self) -> usize {
         self.memory_set.token()
     }
+
     /// Based on the elf info in program, build the contents of task in a new address space
     pub fn new(elf_data: &[u8], app_id: usize) -> Self {
         // memory_set with elf program headers/trampoline/trap context/user stack
@@ -63,6 +88,7 @@ impl TaskControlBlock {
             base_size: user_sp,
             heap_bottom: user_sp,
             program_brk: user_sp,
+						syscall_cnt: [0; MAX_SYSCALL_NUM],
         };
         // prepare TrapContext in user space
         let trap_cx = task_control_block.get_trap_cx();
