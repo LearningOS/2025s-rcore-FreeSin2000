@@ -1,6 +1,6 @@
 //! Process management syscalls
 use crate::task::{change_program_brk, exit_current_and_run_next, suspend_current_and_run_next, copy_from_user, copy_to_user, current_syscall_cnt};
-use crate::mm::VirtAddr;
+use crate::mm::{VirtAddr};
 use crate::timer::get_time_us;
 #[repr(C)]
 #[derive(Debug)]
@@ -81,9 +81,22 @@ pub fn sys_trace(trace_request: usize, id: usize, data: usize) -> isize {
 }
 
 // YOUR JOB: Implement mmap.
-pub fn sys_mmap(_start: usize, _len: usize, _port: usize) -> isize {
+pub fn sys_mmap(start: usize, len: usize, prot: usize) -> isize {
     trace!("kernel: sys_mmap NOT IMPLEMENTED YET!");
-    -1
+    let start_va: VirtAddr = start.into();
+    let _end_va: VirtAddr = (start_va.0 + len).into();
+    if !start_va.aligned() {
+        return -1;
+    }
+    if prot & !0x7 != 0 || prot & 0x7 == 0 {
+        return -1;
+    }
+    /*let start_vpn = start_va.floor();
+    let end_vpn = end_va.ceil();
+    let mut map_perm = MapPermission::U;
+    map_perm = map_perm | (prot << 1);
+    */
+    -1 
 }
 
 // YOUR JOB: Implement munmap.

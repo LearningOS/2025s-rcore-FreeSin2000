@@ -4,6 +4,7 @@ use super::TaskContext;
 use crate::config::TRAP_CONTEXT_BASE;
 use crate::mm::{
     kernel_stack_position, MapPermission, MemorySet, PhysPageNum, VirtAddr, KERNEL_SPACE,
+    VirtPageNum, PageTableEntry,
 };
 use crate::trap::{trap_handler, TrapContext};
 
@@ -55,6 +56,13 @@ impl TaskControlBlock {
     pub fn copy_to_user(&self, va: VirtAddr, len: usize, buf: &[u8]) -> isize{
         self.memory_set.copy_to_user(va, len, buf)
     }
+
+    /// translate vpn to ppn
+    pub fn translate(&self, vpn: VirtPageNum) -> Option<PageTableEntry> {
+        self.memory_set.translate(vpn)
+    }
+
+
     /// get the trap context
     pub fn get_trap_cx(&self) -> &'static mut TrapContext {
         self.trap_cx_ppn.get_mut()

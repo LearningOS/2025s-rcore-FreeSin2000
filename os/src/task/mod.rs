@@ -160,6 +160,13 @@ impl TaskManager {
 		inner.tasks[inner.current_task].copy_to_user(va, len, buf)
     }
 
+    /// translate vpn to ppn
+    pub fn translate(&self, vpn: VirtPageNum) -> Option<PageTableEntry> {
+        let inner = self.inner.exclusive_access();
+		inner.tasks[inner.current_task].translate(vpn)
+    }
+
+
     /// Switch current `Running` task to the task we have found,
     /// or there is no `Ready` task and we can exit with all applications completed
     fn run_next_task(&self) {
@@ -249,6 +256,7 @@ pub fn copy_to_user(va: VirtAddr, len: usize, buf: &[u8]) -> isize {
     TASK_MANAGER.copy_to_user(va, len, buf)
 }
 
-
-
-
+/// translate vpn to ppn
+pub fn translate(vpn: VirtPageNum) -> Option<PageTableEntry> {
+    TASK_MANAGER.translate(vpn)
+}

@@ -64,12 +64,13 @@ impl MemorySet {
             None,
         );
     }
-    fn push(&mut self, mut map_area: MapArea, data: Option<&[u8]>) {
-        map_area.map(&mut self.page_table);
+    fn push(&mut self, mut map_area: MapArea, data: Option<&[u8]>) -> isize{
+        let res = map_area.map(&mut self.page_table);
         if let Some(data) = data {
             map_area.copy_data(&mut self.page_table, data);
         }
         self.areas.push(map_area);
+        res
     }
     /// Mention that trampoline is not collected by areas.
     fn map_trampoline(&mut self) {
@@ -295,6 +296,35 @@ impl MemorySet {
         }
         len as isize
     }
+    /// Umap va range
+    pub fn range_unmap(&mut self, start_vpn: VirtPageNum, end_vpn: VirtPageNum) {
+        let mut del_area_id: Vec<usize> = Vec::new();
+        let mut split_areas: Vec<MapArea> = Vec::new();
+        for (i, map_area) in self.areas.iter_mut().enumerate() {
+            let start_area = map_area.vpn_range.get_start();
+            let end_area = map_area.vpn_range.get_end();
+            let start_unmap = start_area.max(start_vpn);
+            let end_unmap = end_area.min(end_vpn);
+            if start_unmap < end_unmap {
+                del_area_id.push(i);
+                if start_unmap > start_area {
+                    split_areas.push(map_area.split_from(start_unmap));
+                }  
+                if end_unmap < end_area {
+                    split_areas.push(map_area.split_to(end_unmap));
+                } 
+                map_area.range_unmap(&mut self.page_table, start_unmap, end_unmap);
+            }
+        }
+        while let Some(area_id) = del_area_id.pop() {
+            self.areas.remove(area_id);
+        }
+        self.areas.append(&mut split_areas);
+    }
+    /// Map va range
+    pub fn range_map(&mut self, start_vpn: VirtPageNum, end_vpn: VirtPageNum, map_type: MapType, map_perm: MapPermission) -> isize {
+        self.push(MapArea::new(start_vpn.into(), end_vpn.into(), map_type, map_perm), None) 
+    }
     /// shrink the area to new_end
     #[allow(unused)]
     pub fn shrink_to(&mut self, start: VirtAddr, new_end: VirtAddr) -> bool {
@@ -349,20 +379,23 @@ impl MapArea {
             map_perm,
         }
     }
-    pub fn map_one(&mut self, page_table: &mut PageTable, vpn: VirtPageNum) {
+    pub fn map_one(&mut self, page_table: &mut PageTable, vpn: VirtPageNum) -> isize {
         let ppn: PhysPageNum;
         match self.map_type {
             MapType::Identical => {
                 ppn = PhysPageNum(vpn.0);
             }
             MapType::Framed => {
-                let frame = frame_alloc().unwrap();
-                ppn = frame.ppn;
-                self.data_frames.insert(vpn, frame);
+                if let Some(frame) = frame_alloc() {
+                    ppn = frame.ppn;
+                    self.data_frames.insert(vpn, frame);
+                } else {
+                    return -1;
+                }
             }
         }
         let pte_flags = PTEFlags::from_bits(self.map_perm.bits).unwrap();
-        page_table.map(vpn, ppn, pte_flags);
+        page_table.map(vpn, ppn, pte_flags)
     }
     #[allow(unused)]
     pub fn unmap_one(&mut self, page_table: &mut PageTable, vpn: VirtPageNum) {
@@ -371,10 +404,13 @@ impl MapArea {
         }
         page_table.unmap(vpn);
     }
-    pub fn map(&mut self, page_table: &mut PageTable) {
+    pub fn map(&mut self, page_table: &mut PageTable) -> isize {
         for vpn in self.vpn_range {
-            self.map_one(page_table, vpn);
+            if self.map_one(page_table, vpn) == -1 {
+                return -1;
+            }
         }
+        0
     }
     #[allow(unused)]
     pub fn unmap(&mut self, page_table: &mut PageTable) {
@@ -389,10 +425,59 @@ impl MapArea {
         }
         self.vpn_range = VPNRange::new(self.vpn_range.get_start(), new_end);
     }
+
+    /// Split the map area to new end
+    pub fn split_to(&mut self, new_end: VirtPageNum) -> Self {
+        let split_vpn_range = VPNRange::new(new_end, self.vpn_range.get_end());
+        let split_map_type = self.map_type;
+        let split_map_perm = self.map_perm;
+        let mut split_data_frames: BTreeMap<VirtPageNum, FrameTracker> = BTreeMap::new();
+        for vpn in split_vpn_range {
+            if let Some(frame_tracer) = self.data_frames.remove(&vpn) {
+                split_data_frames.insert(vpn, frame_tracer);
+            }
+        }
+        Self {
+            vpn_range: split_vpn_range,
+            data_frames: split_data_frames,
+            map_type: split_map_type,
+            map_perm: split_map_perm,
+        }
+    }
+    
+    /// Split the map area from new start 
+    pub fn split_from(&mut self, new_start: VirtPageNum) -> Self {
+        let split_vpn_range = VPNRange::new(self.vpn_range.get_start(), new_start);
+        let split_map_type = self.map_type;
+        let split_map_perm = self.map_perm;
+        let mut split_data_frames: BTreeMap<VirtPageNum, FrameTracker> = BTreeMap::new();
+        for vpn in split_vpn_range {
+            if let Some(frame_tracer) = self.data_frames.remove(&vpn) {
+                split_data_frames.insert(vpn, frame_tracer);
+            }
+        }
+        Self {
+            vpn_range: split_vpn_range,
+            data_frames: split_data_frames,
+            map_type: split_map_type,
+            map_perm: split_map_perm,
+        }
+    }
+    /// Range unmap
+    pub fn range_unmap(&mut self, page_table: &mut PageTable,start_unmap: VirtPageNum, end_unmap: VirtPageNum) {
+        for vpn in VPNRange::new(start_unmap, end_unmap) {
+            if self.map_type == MapType::Framed {
+                self.data_frames.remove(&vpn);
+            }
+            page_table.unmap(vpn);
+        }
+    }
+
+
     #[allow(unused)]
     pub fn append_to(&mut self, page_table: &mut PageTable, new_end: VirtPageNum) {
         for vpn in VPNRange::new(self.vpn_range.get_end(), new_end) {
-            self.map_one(page_table, vpn)
+            self.map_one(page_table, vpn);
         }
         self.vpn_range = VPNRange::new(self.vpn_range.get_start(), new_end);
     }
