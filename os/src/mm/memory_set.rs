@@ -241,12 +241,14 @@ impl MemorySet {
         
 		let start_va: VirtAddr = va;
 		let end_va: VirtAddr = (start_va.0 + len).into();
-
+        if end_va < start_va {
+            return false;
+        }
 		let start_vpn: VirtPageNum = start_va.floor();
 		let end_vpn: VirtPageNum = end_va.ceil();
 
 		let vpn_range = VPNRange::new(start_vpn, end_vpn);		
-        for vpn in vpn_range.into_iter() {
+        for vpn in vpn_range {
             if let Some(pte) = self.translate(vpn) {
                 if (pte.flags() & flags) != flags {
                     return false;
@@ -297,7 +299,17 @@ impl MemorySet {
         len as isize
     }
     /// Umap va range
-    pub fn range_unmap(&mut self, start_vpn: VirtPageNum, end_vpn: VirtPageNum) {
+    pub fn range_unmap(&mut self, start_vpn: VirtPageNum, end_vpn: VirtPageNum) -> isize {
+        for vpn in VPNRange::new(start_vpn, end_vpn) {
+            if let Some(_pte) = self.translate(vpn) {
+                if !_pte.is_valid() {
+                    return -1;
+                }
+                continue;
+            } else {
+                return -1;
+            }
+        } 
         let mut del_area_id: Vec<usize> = Vec::new();
         let mut split_areas: Vec<MapArea> = Vec::new();
         for (i, map_area) in self.areas.iter_mut().enumerate() {
@@ -320,10 +332,16 @@ impl MemorySet {
             self.areas.remove(area_id);
         }
         self.areas.append(&mut split_areas);
+        0
     }
     /// Map va range
-    pub fn range_map(&mut self, start_vpn: VirtPageNum, end_vpn: VirtPageNum, map_type: MapType, map_perm: MapPermission) -> isize {
-        self.push(MapArea::new(start_vpn.into(), end_vpn.into(), map_type, map_perm), None) 
+    pub fn range_map(&mut self, start_vpn: VirtPageNum, end_vpn: VirtPageNum, map_perm: MapPermission) -> isize {
+        for vpn in VPNRange::new(start_vpn, end_vpn) {
+            if let Some(_pte) = self.translate(vpn) {
+                if _pte.is_valid() {return -1;}
+            }
+        } 
+        self.push(MapArea::new(start_vpn.into(), end_vpn.into(), MapType::Framed, map_perm), None)
     }
     /// shrink the area to new_end
     #[allow(unused)]

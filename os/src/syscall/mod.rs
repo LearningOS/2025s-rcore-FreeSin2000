@@ -9,6 +9,7 @@
 //! For clarity, each single syscall is implemented as its own function, named
 //! `sys_` then the name of the syscall. You can find functions like this in
 //! submodules, and you should also implement syscalls this way.
+
 const SYSCALL_WRITE: usize = 64;
 /// exit syscall
 const SYSCALL_EXIT: usize = 93;
@@ -24,8 +25,6 @@ const SYSCALL_MUNMAP: usize = 215;
 const SYSCALL_MMAP: usize = 222;
 /// trace syscall
 const SYSCALL_TRACE: usize = 410;
-/// max syscall num
-pub const MAX_SYSCALL_NUM: usize = 512;
 
 mod fs;
 mod process;

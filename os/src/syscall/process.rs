@@ -1,7 +1,8 @@
 //! Process management syscalls
-use crate::task::{change_program_brk, exit_current_and_run_next, suspend_current_and_run_next, copy_from_user, copy_to_user, current_syscall_cnt};
-use crate::mm::{VirtAddr};
+use crate::task::{change_program_brk, exit_current_and_run_next, suspend_current_and_run_next, copy_from_user, copy_to_user, current_syscall_cnt, range_map, range_unmap};
+use crate::mm::{VirtAddr, MapPermission};
 use crate::timer::get_time_us;
+use crate::config::MAX_SYSCALL_NUM;
 #[repr(C)]
 #[derive(Debug)]
 pub struct TimeVal {
@@ -72,7 +73,9 @@ pub fn sys_trace(trace_request: usize, id: usize, data: usize) -> isize {
 
         },
         2 => {
-            current_syscall_cnt(id) as isize
+            if id >= MAX_SYSCALL_NUM {-1} else {
+                current_syscall_cnt(id) as isize
+            }
         },
         _ => {
             -1
@@ -82,27 +85,35 @@ pub fn sys_trace(trace_request: usize, id: usize, data: usize) -> isize {
 
 // YOUR JOB: Implement mmap.
 pub fn sys_mmap(start: usize, len: usize, prot: usize) -> isize {
-    trace!("kernel: sys_mmap NOT IMPLEMENTED YET!");
+    trace!("kernel: sys_mmap");
     let start_va: VirtAddr = start.into();
-    let _end_va: VirtAddr = (start_va.0 + len).into();
+    let end_va: VirtAddr = (start_va.0 + len).into();
     if !start_va.aligned() {
         return -1;
     }
     if prot & !0x7 != 0 || prot & 0x7 == 0 {
         return -1;
     }
-    /*let start_vpn = start_va.floor();
+    let start_vpn = start_va.floor();
     let end_vpn = end_va.ceil();
     let mut map_perm = MapPermission::U;
-    map_perm = map_perm | (prot << 1);
-    */
-    -1 
+    if prot & 1 != 0 { map_perm = map_perm | MapPermission::R;}
+    if (prot >> 1) & 1 != 0 { map_perm = map_perm | MapPermission::W;}
+    if (prot >> 2) & 1 != 0 { map_perm = map_perm | MapPermission::X;}
+    range_map(start_vpn, end_vpn, map_perm)
 }
 
 // YOUR JOB: Implement munmap.
-pub fn sys_munmap(_start: usize, _len: usize) -> isize {
-    trace!("kernel: sys_munmap NOT IMPLEMENTED YET!");
-    -1
+pub fn sys_munmap(start: usize, len: usize) -> isize {
+    trace!("kernel: sys_munmap");
+    let start_va: VirtAddr = start.into();
+    let end_va: VirtAddr = (start_va.0 + len).into();
+    if !start_va.aligned() {
+        return -1;
+    }
+    let start_vpn = start_va.floor();
+    let end_vpn = end_va.ceil();
+    range_unmap(start_vpn, end_vpn)
 }
 /// change data segment size
 pub fn sys_sbrk(size: i32) -> isize {

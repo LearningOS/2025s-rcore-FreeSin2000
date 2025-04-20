@@ -1,10 +1,9 @@
 //! Types related to task management
-use crate::syscall::{MAX_SYSCALL_NUM};
 use super::TaskContext;
-use crate::config::TRAP_CONTEXT_BASE;
+use crate::config::{TRAP_CONTEXT_BASE, MAX_SYSCALL_NUM};
 use crate::mm::{
     kernel_stack_position, MapPermission, MemorySet, PhysPageNum, VirtAddr, KERNEL_SPACE,
-    VirtPageNum, PageTableEntry,
+    VirtPageNum, PageTableEntry, 
 };
 use crate::trap::{trap_handler, TrapContext};
 
@@ -63,6 +62,15 @@ impl TaskControlBlock {
     }
 
 
+    /// Umap va range
+    pub fn range_unmap(&mut self, start_vpn: VirtPageNum, end_vpn: VirtPageNum) -> isize {
+        self.memory_set.range_unmap(start_vpn, end_vpn)
+    }
+
+    /// Map va range
+    pub fn range_map(&mut self, start_vpn: VirtPageNum, end_vpn: VirtPageNum, map_perm: MapPermission) -> isize {
+        self.memory_set.range_map(start_vpn, end_vpn, map_perm)
+    }
     /// get the trap context
     pub fn get_trap_cx(&self) -> &'static mut TrapContext {
         self.trap_cx_ppn.get_mut()

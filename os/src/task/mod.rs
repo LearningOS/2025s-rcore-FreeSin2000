@@ -166,6 +166,20 @@ impl TaskManager {
 		inner.tasks[inner.current_task].translate(vpn)
     }
 
+    /// Umap va range
+    pub fn range_unmap(&self, start_vpn: VirtPageNum, end_vpn: VirtPageNum) -> isize {
+        let mut inner = self.inner.exclusive_access();
+        let cur = inner.current_task;
+		inner.tasks[cur].range_unmap(start_vpn, end_vpn)
+    }
+
+
+    /// Map va range
+    pub fn range_map(&self, start_vpn: VirtPageNum, end_vpn: VirtPageNum, map_perm: MapPermission) -> isize {
+        let mut inner = self.inner.exclusive_access();
+        let cur = inner.current_task;
+		inner.tasks[cur].range_map(start_vpn, end_vpn, map_perm)
+    }
 
     /// Switch current `Running` task to the task we have found,
     /// or there is no `Ready` task and we can exit with all applications completed
@@ -259,4 +273,15 @@ pub fn copy_to_user(va: VirtAddr, len: usize, buf: &[u8]) -> isize {
 /// translate vpn to ppn
 pub fn translate(vpn: VirtPageNum) -> Option<PageTableEntry> {
     TASK_MANAGER.translate(vpn)
+}
+
+/// Umap va range
+pub fn range_unmap(start_vpn: VirtPageNum, end_vpn: VirtPageNum) -> isize{
+    TASK_MANAGER.range_unmap(start_vpn, end_vpn)
+}
+
+
+/// Map va range
+pub fn range_map(start_vpn: VirtPageNum, end_vpn: VirtPageNum, map_perm: MapPermission) -> isize {
+    TASK_MANAGER.range_map(start_vpn, end_vpn, map_perm)
 }
