@@ -298,15 +298,19 @@ impl MemorySet {
         }
         len as isize
     }
+    /// Check if the vpn in the map set
+    pub fn in_map_area(&self, vpn: VirtPageNum) -> bool {
+        for map_area in &self.areas {
+            if vpn >= map_area.vpn_range.get_start() && vpn < map_area.vpn_range.get_end() {
+                return true;
+            }
+        }
+        false
+    }
     /// Umap va range
     pub fn range_unmap(&mut self, start_vpn: VirtPageNum, end_vpn: VirtPageNum) -> isize {
         for vpn in VPNRange::new(start_vpn, end_vpn) {
-            if let Some(_pte) = self.translate(vpn) {
-                if !_pte.is_valid() {
-                    return -1;
-                }
-                continue;
-            } else {
+            if !self.in_map_area(vpn) {
                 return -1;
             }
         } 
@@ -337,8 +341,8 @@ impl MemorySet {
     /// Map va range
     pub fn range_map(&mut self, start_vpn: VirtPageNum, end_vpn: VirtPageNum, map_perm: MapPermission) -> isize {
         for vpn in VPNRange::new(start_vpn, end_vpn) {
-            if let Some(_pte) = self.translate(vpn) {
-                if _pte.is_valid() {return -1;}
+            if self.in_map_area(vpn) {
+                return -1;
             }
         } 
         self.push(MapArea::new(start_vpn.into(), end_vpn.into(), MapType::Framed, map_perm), None)
