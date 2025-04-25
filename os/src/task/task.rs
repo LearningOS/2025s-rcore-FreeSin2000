@@ -37,7 +37,7 @@ pub struct TaskControlBlock {
 impl TaskControlBlock {
     /// get the syscall count
     pub fn get_syscall_cnt(&self, id: usize) -> usize {
-            self.syscall_cnt[id]
+        self.syscall_cnt[id]
     }
 
     /// upd the syscall count
@@ -104,7 +104,7 @@ impl TaskControlBlock {
             base_size: user_sp,
             heap_bottom: user_sp,
             program_brk: user_sp,
-						syscall_cnt: [0; MAX_SYSCALL_NUM],
+            syscall_cnt: [0; MAX_SYSCALL_NUM],
         };
         // prepare TrapContext in user space
         let trap_cx = task_control_block.get_trap_cx();
