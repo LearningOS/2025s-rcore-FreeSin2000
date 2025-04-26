@@ -3,11 +3,12 @@ use alloc::sync::Arc;
 
 use crate::{
     loader::get_app_data_by_name,
-    mm::{translated_refmut, translated_str},
+    mm::{translated_refmut, translated_str, VirtAddr, MapPermission, },
     task::{
         add_task, current_task, current_user_token, exit_current_and_run_next,
-        suspend_current_and_run_next,
+        suspend_current_and_run_next, copy_to_user, range_map, range_unmap,
     },
+    timer::get_time_us,
 };
 
 #[repr(C)]
@@ -105,30 +106,61 @@ pub fn sys_waitpid(pid: isize, exit_code_ptr: *mut i32) -> isize {
 /// YOUR JOB: get time with second and microsecond
 /// HINT: You might reimplement it with virtual memory management.
 /// HINT: What if [`TimeVal`] is splitted by two pages ?
-pub fn sys_get_time(_ts: *mut TimeVal, _tz: usize) -> isize {
-    trace!(
-        "kernel:pid[{}] sys_get_time NOT IMPLEMENTED",
-        current_task().unwrap().pid.0
-    );
-    -1
+pub fn sys_get_time(ts: *mut TimeVal, _tz: usize) -> isize {
+    trace!("kernel: sys_get_time");
+    let us = get_time_us();
+    /*
+    unsafe {
+        *ts = TimeVal {
+            sec: us / 1_000_000,
+            usec: us % 1_000_000,
+        };
+    }
+    */
+    let res =  TimeVal {
+            sec: us / 1_000_000,
+            usec: us % 1_000_000,
+        };
+    let ptr = &res as *const TimeVal as *const u8;
+    let len = core::mem::size_of::<TimeVal>();
+    let buf = unsafe{core::slice::from_raw_parts(ptr, len)};
+    let va: VirtAddr = (ts as usize).into();
+    copy_to_user(va, len, buf);
+    0
 }
 
-/// YOUR JOB: Implement mmap.
-pub fn sys_mmap(_start: usize, _len: usize, _port: usize) -> isize {
-    trace!(
-        "kernel:pid[{}] sys_mmap NOT IMPLEMENTED",
-        current_task().unwrap().pid.0
-    );
-    -1
+
+// YOUR JOB: Implement mmap.
+pub fn sys_mmap(start: usize, len: usize, prot: usize) -> isize {
+    trace!("kernel: sys_mmap");
+    let start_va: VirtAddr = start.into();
+    let end_va: VirtAddr = (start_va.0 + len).into();
+    if !start_va.aligned() {
+        return -1;
+    }
+    if prot & !0x7 != 0 || prot & 0x7 == 0 {
+        return -1;
+    }
+    let start_vpn = start_va.floor();
+    let end_vpn = end_va.ceil();
+    let mut map_perm = MapPermission::U;
+    if prot & 1 != 0 { map_perm = map_perm | MapPermission::R;}
+    if (prot >> 1) & 1 != 0 { map_perm = map_perm | MapPermission::W;}
+    if (prot >> 2) & 1 != 0 { map_perm = map_perm | MapPermission::X;}
+    range_map(start_vpn, end_vpn, map_perm)
 }
 
-/// YOUR JOB: Implement munmap.
-pub fn sys_munmap(_start: usize, _len: usize) -> isize {
-    trace!(
-        "kernel:pid[{}] sys_munmap NOT IMPLEMENTED",
-        current_task().unwrap().pid.0
-    );
-    -1
+// YOUR JOB: Implement munmap.
+pub fn sys_munmap(start: usize, len: usize) -> isize {
+    trace!("kernel: sys_munmap");
+    let start_va: VirtAddr = start.into();
+    let end_va: VirtAddr = (start_va.0 + len).into();
+    if !start_va.aligned() {
+        return -1;
+    }
+    let start_vpn = start_va.floor();
+    let end_vpn = end_va.ceil();
+    range_unmap(start_vpn, end_vpn)
 }
 
 /// change data segment size
