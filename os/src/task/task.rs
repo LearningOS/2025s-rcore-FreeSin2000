@@ -69,6 +69,12 @@ pub struct TaskControlBlockInner {
     /// Program break
     pub program_brk: usize,
 
+    /// Stride algorithm stride
+    pub stride: usize,
+
+    /// Priority
+    pub priority: usize,
+
 }
 
 impl TaskControlBlockInner {
@@ -86,6 +92,7 @@ impl TaskControlBlockInner {
     pub fn is_zombie(&self) -> bool {
         self.get_status() == TaskStatus::Zombie
     }
+
 }
 
 impl TaskControlBlock {
@@ -119,6 +126,8 @@ impl TaskControlBlock {
                     exit_code: 0,
                     heap_bottom: user_sp,
                     program_brk: user_sp,
+                    priority: 2,
+                    stride: 0,
                 })
             },
         };
@@ -192,6 +201,8 @@ impl TaskControlBlock {
                     exit_code: 0,
                     heap_bottom: parent_inner.heap_bottom,
                     program_brk: parent_inner.program_brk,
+                    priority: 2,
+                    stride: 0,
                 })
             },
         });
