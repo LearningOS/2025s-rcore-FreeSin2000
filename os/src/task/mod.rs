@@ -29,6 +29,7 @@ use lazy_static::*;
 pub use manager::{fetch_task, TaskManager};
 use switch::__switch;
 pub use task::{TaskControlBlock, TaskStatus};
+use crate::mm::{VirtAddr, VirtPageNum, MapPermission};
 
 pub use id::{kstack_alloc, pid_alloc, KernelStack, PidHandle};
 pub use manager::add_task;
@@ -119,4 +120,32 @@ lazy_static! {
 ///Add init process to the manager
 pub fn add_initproc() {
     add_task(INITPROC.clone());
+}
+
+/// Copy from the current 'Running' task's address space.
+pub fn copy_from_user(va: VirtAddr, len: usize, buf: &mut [u8]) -> isize {
+    let task = current_task().unwrap();
+    let inner = task.inner_exclusive_access();
+    inner.memory_set.copy_from_user(va, len, buf)
+}
+/// Copy to the current 'Running' task's address space.
+pub fn copy_to_user(va: VirtAddr, len: usize, buf: &[u8]) -> isize {
+    let task = current_task().unwrap();
+    let inner = task.inner_exclusive_access();
+    inner.memory_set.copy_to_user(va, len, buf)
+}
+
+/// Umap va range
+pub fn range_unmap(start_vpn: VirtPageNum, end_vpn: VirtPageNum) -> isize{
+    let task = current_task().unwrap();
+    let mut inner = task.inner_exclusive_access();
+    inner.memory_set.range_unmap(start_vpn, end_vpn)
+}
+
+
+/// Map va range
+pub fn range_map(start_vpn: VirtPageNum, end_vpn: VirtPageNum, map_perm: MapPermission) -> isize {
+    let task = current_task().unwrap();
+    let mut inner = task.inner_exclusive_access();
+    inner.memory_set.range_map(start_vpn, end_vpn, map_perm)
 }
