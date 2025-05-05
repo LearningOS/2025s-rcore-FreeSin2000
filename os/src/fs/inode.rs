@@ -105,6 +105,10 @@ impl OpenFlags {
 pub fn linkat(old_name: &str, new_name: &str) -> isize{
     ROOT_INODE.linkat(old_name, new_name)
 }
+/// Delete a link
+pub fn unlinkat(name: &str) -> isize{
+    ROOT_INODE.unlinkat(name)
+}
 /// Open a file
 pub fn open_file(name: &str, flags: OpenFlags) -> Option<Arc<OSInode>> {
     let (readable, writable) = flags.read_write();
