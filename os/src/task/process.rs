@@ -49,6 +49,12 @@ pub struct ProcessControlBlockInner {
     pub semaphore_list: Vec<Option<Arc<Semaphore>>>,
     /// condvar list
     pub condvar_list: Vec<Option<Arc<Condvar>>>,
+    /// mutex deadlock detect matrixs
+    pub mutex_deadlock_detect: DeadlockDetectMatrixs,
+    /// semaphore_deadlock detect matrixs
+    pub semaphore_deadlock_detect: DeadlockDetectMatrixs,
+    /// if enable deadlock detect
+    pub enable_deadlock_detect: bool,
 }
 
 impl ProcessControlBlockInner {
@@ -119,6 +125,9 @@ impl ProcessControlBlock {
                     mutex_list: Vec::new(),
                     semaphore_list: Vec::new(),
                     condvar_list: Vec::new(),
+                    mutex_deadlock_detect: DeadlockDetectMatrixs::new(),
+                    semaphore_deadlock_detect: DeadlockDetectMatrixs::new(),
+                    enable_deadlock_detect: false,
                 })
             },
         });
@@ -128,6 +137,7 @@ impl ProcessControlBlock {
             ustack_base,
             true,
         ));
+
         // prepare trap_cx of main thread
         let task_inner = task.inner_exclusive_access();
         let trap_cx = task_inner.get_trap_cx();
@@ -144,6 +154,8 @@ impl ProcessControlBlock {
         // add main thread to the process
         let mut process_inner = process.inner_exclusive_access();
         process_inner.tasks.push(Some(Arc::clone(&task)));
+        process_inner.mutex_deadlock_detect.add_thread(0);
+        process_inner.semaphore_deadlock_detect.add_thread(0);
         drop(process_inner);
         insert_into_pid2process(process.getpid(), Arc::clone(&process));
         // add main thread to scheduler
@@ -166,6 +178,8 @@ impl ProcessControlBlock {
         // since memory_set has been changed
         trace!("kernel: exec .. alloc user resource for main thread again");
         let task = self.inner_exclusive_access().get_task(0);
+        self.inner_exclusive_access().mutex_deadlock_detect.release_thread(0);
+        self.inner_exclusive_access().semaphore_deadlock_detect.release_thread(0);
         let mut task_inner = task.inner_exclusive_access();
         task_inner.res.as_mut().unwrap().ustack_base = ustack_base;
         task_inner.res.as_mut().unwrap().alloc_user_res();
@@ -245,6 +259,9 @@ impl ProcessControlBlock {
                     mutex_list: Vec::new(),
                     semaphore_list: Vec::new(),
                     condvar_list: Vec::new(),
+                    mutex_deadlock_detect: DeadlockDetectMatrixs::new(),
+                    semaphore_deadlock_detect: DeadlockDetectMatrixs::new(),
+                    enable_deadlock_detect: false,
                 })
             },
         });
@@ -267,6 +284,8 @@ impl ProcessControlBlock {
         // attach task to child process
         let mut child_inner = child.inner_exclusive_access();
         child_inner.tasks.push(Some(Arc::clone(&task)));
+        child_inner.mutex_deadlock_detect.add_thread(0);
+        child_inner.semaphore_deadlock_detect.add_thread(0);
         drop(child_inner);
         // modify kstack_top in trap_cx of this thread
         let task_inner = task.inner_exclusive_access();
@@ -281,5 +300,93 @@ impl ProcessControlBlock {
     /// get pid
     pub fn getpid(&self) -> usize {
         self.pid.0
+    }
+}
+
+/// Deadlock detect matrix
+pub struct DeadlockDetectMatrixs {
+    pub available: Vec<usize>,
+    pub allocation: Vec<Vec<usize>>,
+    pub need: Vec<Vec<usize>>,
+}
+
+/// Impl deadlock detext matrix
+impl DeadlockDetectMatrixs {
+    /// create a new deadlock detect matrixs struct
+    pub fn new() -> Self {
+        Self {
+            available: Vec::new(),
+            allocation: Vec::new(),
+            need: Vec::new(),
+        }
+    }
+
+    /// add thread row
+    pub fn add_thread(&mut self, i: usize) {
+        let zero_v = vec![0; self.available.len()];
+        while self.allocation.len() < i + 1 {
+            self.allocation.push(zero_v.clone());
+            self.need.push(zero_v.clone());
+        }
+    }
+    /// release thread
+    pub fn release_thread(&mut self, i: usize) {
+        for j in 0..self.available.len() {
+            self.available[j] += self.allocation[i][j];
+            self.need[i][j] = 0;
+            self.allocation[i][j] = 0;
+        }
+    }
+    /// add res col 
+    pub fn add_res(&mut self, avail: usize) {
+        self.available.push(avail);
+        for i in 0..self.allocation.len() {
+            self.allocation[i].push(0);
+            self.need[i].push(0);
+        }
+    }
+
+    /// init res
+    pub fn init_res(&mut self, j: usize, avail: usize) {
+        self.available[j] = avail;
+        for i in 0..self.allocation.len() {
+            self.allocation[i][j] = 0;
+            self.need[i][j] = 0;
+        }
+    }
+    /// check if has deadlock
+    pub fn check_deadlock(&mut self) -> bool {
+        let mut work = self.available.clone();
+        let mut finish = vec![false; self.available.len()];
+        while let Some(i) = self.find_finish(&work, &finish) {
+            for j in 0..work.len() {
+                work[j] += self.allocation[i][j];
+            }
+            finish[i] = true;
+        }
+        for is_fin in finish.iter() {
+            if !is_fin {
+                return true;
+            }
+        }
+        false
+    }
+    /// find a finish able tid
+    pub fn find_finish(&self, work: & Vec<usize>, finish: & Vec<bool>) -> Option<usize> {
+        for i in 0..finish.len() {
+            if finish[i] {
+                continue;
+            }
+            let mut is_fin = true;
+            for j in 0..work.len() {
+                if work[j] < self.need[i][j] {
+                    is_fin = false;
+                }
+            }
+            if is_fin {
+                return Some(i);
+            }
+        }
+        None
     }
 }
